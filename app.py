@@ -12,16 +12,34 @@ st.title("📊 广告单元瀑布流分析工具")
 st.markdown("上传CSV文件，自动生成Top 5国家的广告单元分析报告")
 
 def apply_excel_styling(worksheet, data_df, start_row):
+    """应用Excel样式（包含条件格式 + 优化列宽）"""
+    
     content_font = Font(name='等线', size=11)
     header_font = Font(name='等线', bold=True, size=12, color="FFFFFF")
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     even_fill = PatternFill(start_color="F5F9FF", end_color="F5F9FF", fill_type="solid")
     odd_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-    thin_border = Border(left=Side(style='thin', color='D0D0D0'), right=Side(style='thin', color='D0D0D0'),
-                        top=Side(style='thin', color='D0D0D0'), bottom=Side(style='thin', color='D0D0D0'))
+    
+    thin_border = Border(
+        left=Side(style='thin', color='D0D0D0'),
+        right=Side(style='thin', color='D0D0D0'),
+        top=Side(style='thin', color='D0D0D0'),
+        bottom=Side(style='thin', color='D0D0D0')
+    )
+    
     columns = data_df.columns.tolist()
     
-    worksheet.row_dimensions[start_row].height = 25
+    # ========== 找出需要条件格式的列 ==========
+    earnings_pct_idx = None
+    impressions_pct_idx = None
+    for idx, col_name in enumerate(columns, 1):
+        if col_name == 'Earnings %':
+            earnings_pct_idx = idx
+        elif col_name == 'Impressions %':
+            impressions_pct_idx = idx
+    
+    # ========== 设置表头 ==========
+    worksheet.row_dimensions[start_row].height = 30  # 增加行高，让表头更清晰
     for col_idx, col_name in enumerate(columns, 1):
         cell = worksheet.cell(row=start_row, column=col_idx)
         cell.font = header_font
@@ -29,31 +47,110 @@ def apply_excel_styling(worksheet, data_df, start_row):
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = thin_border
     
+    # ========== 设置数据行 ==========
     for row_idx in range(start_row + 1, start_row + len(data_df) + 1):
-        worksheet.row_dimensions[row_idx].height = 20
-        row_fill = even_fill if (row_idx - start_row - 1) % 2 == 1 else odd_fill
+        worksheet.row_dimensions[row_idx].height = 22
+        
+        # 基础交替颜色
+        base_fill = even_fill if (row_idx - start_row - 1) % 2 == 1 else odd_fill
+        
         for col_idx, col_name in enumerate(columns, 1):
             cell = worksheet.cell(row=row_idx, column=col_idx)
             cell.font = content_font
-            cell.fill = row_fill
+            cell.fill = base_fill
             cell.border = thin_border
-            cell.alignment = Alignment(horizontal="center" if col_name == 'Rank' else "left" if col_name == 'Ad Unit' else "right", vertical="center")
-            if col_name in ['Earnings (USD)', 'eCPM (USD)']:
+            
+            # 对齐方式
+            if col_name == 'Rank':
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif col_name == 'Ad Unit':
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            
+            # 数字格式
+            if col_name == 'Earnings (USD)':
+                cell.number_format = '"$"#,##0.00'
+            elif col_name == 'eCPM (USD)':
                 cell.number_format = '"$"#,##0.00'
             elif col_name in ['Earnings %', 'Match Rate (%)', 'Impressions %', 'Requests %']:
                 cell.number_format = '0.00"%"'
             elif col_name in ['Impressions', 'Requests']:
                 cell.number_format = '#,##0'
+        
+        # ========== 条件格式：Earnings % ==========
+        if earnings_pct_idx:
+            cell = worksheet.cell(row=row_idx, column=earnings_pct_idx)
+            value = cell.value
+            if value is not None:
+                if value > 10:
+                    cell.fill = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")  # 绿色
+                elif value < 2:
+                    cell.fill = PatternFill(start_color="FF6B6B", end_color="FF6B6B", fill_type="solid")  # 红色
+        
+        # ========== 条件格式：Impressions % ==========
+        if impressions_pct_idx:
+            cell = worksheet.cell(row=row_idx, column=impressions_pct_idx)
+            value = cell.value
+            if value is not None:
+                if value > 10:
+                    cell.fill = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")  # 绿色
+                elif value < 2:
+                    cell.fill = PatternFill(start_color="FF6B6B", end_color="FF6B6B", fill_type="solid")  # 红色
     
-    for col_idx in range(1, len(columns) + 1):
+    # ========== 优化列宽（确保所有内容完整显示） ==========
+    # 定义每列的最小宽度和最大宽度
+    column_widths = {
+        'Rank': 8,
+        'Ad Unit': 45,
+        'Earnings (USD)': 18,
+        'Earnings %': 16,
+        'Impressions': 16,
+        'Impressions %': 16,
+        'Requests': 16,
+        'Requests %': 16,
+        'eCPM (USD)': 16,
+        'Match Rate (%)': 18
+    }
+    
+    for col_idx, col_name in enumerate(columns, 1):
         column_letter = get_column_letter(col_idx)
-        max_length = len(columns[col_idx - 1])
-        for row in range(start_row, min(start_row + len(data_df) + 1, start_row + 100)):
+        
+        # 从预定义宽度获取基础宽度，否则根据表头长度计算
+        if col_name in column_widths:
+            base_width = column_widths[col_name]
+        else:
+            base_width = max(len(col_name) + 3, 12)
+        
+        # 检查数据内容长度
+        max_data_length = 0
+        for row in range(start_row + 1, min(start_row + len(data_df) + 1, start_row + 200)):
             cell_value = worksheet.cell(row=row, column=col_idx).value
-            if cell_value:
-                max_length = max(max_length, min(len(str(cell_value)), 50))
-        adjusted_width = min(max_length + 3, 45) if columns[col_idx - 1] == 'Ad Unit' else min(max_length + 2, 20)
-        worksheet.column_dimensions[column_letter].width = adjusted_width
+            if cell_value is not None:
+                # 处理数字格式化的长度
+                if col_name in ['Earnings (USD)', 'eCPM (USD)']:
+                    length = len(f"${cell_value:,.2f}") if isinstance(cell_value, (int, float)) else len(str(cell_value))
+                elif col_name in ['Earnings %', 'Impressions %', 'Requests %', 'Match Rate (%)']:
+                    length = len(f"{cell_value:.2f}%") if isinstance(cell_value, (int, float)) else len(str(cell_value))
+                elif col_name in ['Impressions', 'Requests']:
+                    length = len(f"{cell_value:,.0f}") if isinstance(cell_value, (int, float)) else len(str(cell_value))
+                else:
+                    length = len(str(cell_value))
+                
+                if length > max_data_length:
+                    max_data_length = min(length, 60)  # 限制最大宽度
+        
+        # 计算最终宽度：取表头长度、数据长度、预定义宽度的最大值
+        header_length = len(col_name) + 2
+        final_width = max(header_length, max_data_length + 2, base_width)
+        
+        # 对于 Ad Unit 列，可以更宽
+        if col_name == 'Ad Unit':
+            final_width = min(final_width, 50)
+        else:
+            final_width = min(final_width, 25)
+        
+        worksheet.column_dimensions[column_letter].width = final_width
 
 def process_csv(file_content):
     df = pd.read_csv(io.BytesIO(file_content), sep='\t', encoding='utf-16')
@@ -113,14 +210,16 @@ def process_csv(file_content):
                         cell.font = Font(name='等线', size=10)
                 
                 # App名称
-                worksheet.cell(row=1, column=1, value=f" App: {app_name}").font = Font(name='等线', bold=True, size=14)
-                worksheet.cell(row=1, column=1).alignment = Alignment(horizontal="left", vertical="center")
+                app_cell = worksheet.cell(row=1, column=1, value=f" App: {app_name}")
+                app_cell.font = Font(name='等线', bold=True, size=14)
+                app_cell.alignment = Alignment(horizontal="left", vertical="center")
                 worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
                 worksheet.row_dimensions[1].height = 28
                 
                 # 标题
-                worksheet.cell(row=2, column=1, value=f"📊 {country} - 广告单元分析报告").font = Font(name='等线', bold=True, size=16)
-                worksheet.cell(row=2, column=1).alignment = Alignment(horizontal="left", vertical="center")
+                title_cell = worksheet.cell(row=2, column=1, value=f"📊 {country} - 广告单元分析报告")
+                title_cell.font = Font(name='等线', bold=True, size=16)
+                title_cell.alignment = Alignment(horizontal="left", vertical="center")
                 worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=9)
                 worksheet.row_dimensions[2].height = 30
                 
@@ -214,14 +313,34 @@ def process_csv(file_content):
                         cell.alignment = Alignment(horizontal="left", vertical="center")
             
             worksheet.freeze_panes = f'A{header_row + 1}'
-            for col_idx in range(1, len(summary_df.columns) + 1):
+            
+            # Summary 列宽优化
+            summary_column_widths = {
+                'App Name': 20,
+                'Country': 18,
+                'Total Earnings (USD)': 20,
+                'Total Impressions': 18,
+                'Total Requests': 16,
+                'Number of Ad Units': 16,
+                'Avg eCPM (USD)': 16,
+                'Avg Match Rate (%)': 18,
+                'Max eCPM (USD)': 16,
+                'Min eCPM (USD)': 16
+            }
+            for col_idx, col_name in enumerate(summary_df.columns, 1):
                 column_letter = get_column_letter(col_idx)
-                max_length = len(summary_df.columns[col_idx - 1])
-                for row in range(header_row, len(summary_df) + header_row + 1):
+                base_width = summary_column_widths.get(col_name, 15)
+                
+                # 检查数据长度
+                max_length = len(col_name) + 2
+                for row in range(header_row + 1, len(summary_df) + header_row + 1):
                     cell_value = worksheet.cell(row=row, column=col_idx).value
-                    if cell_value:
-                        max_length = max(max_length, min(len(str(cell_value)), 25))
-                worksheet.column_dimensions[column_letter].width = max_length + 2
+                    if cell_value is not None:
+                        length = len(str(cell_value))
+                        if length > max_length:
+                            max_length = min(length, 25)
+                
+                worksheet.column_dimensions[column_letter].width = max(max_length + 2, base_width)
     
     output.seek(0)
     return output
@@ -260,6 +379,12 @@ if uploaded_file is not None:
             )
             
             st.info("💡 报告已生成，点击上方按钮下载")
+            st.markdown("""
+            **📌 颜色说明：**
+            - 🟢 绿色：收益占比/展示占比 > 10%
+            - 🔴 红色：收益占比/展示占比 < 2%
+            - ⚪ 白色/浅蓝：正常范围 (2% ~ 10%)
+            """)
             
         except Exception as e:
             st.error(f"❌ 处理失败: {str(e)}")
