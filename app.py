@@ -375,4 +375,4 @@ if uploaded_file is not None:
             st.exception(e)
 
 st.markdown("---")
-st.caption("💡 数据格式要求：UTF-16编码的Tab分隔CSV文件，必须包含 App, Country, Ad unit 等列")
+st.caption("💡 数据格式要求：UTF-8编码的Tab分隔CSV文件，必须包含 App, Country, Ad unit 等列")
